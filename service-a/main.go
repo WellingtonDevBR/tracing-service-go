@@ -24,6 +24,13 @@ type Input struct {
 	CEP string `json:"cep"`
 }
 
+type WeatherResponse struct {
+	City  string  `json:"city"`
+	TempC float64 `json:"temp_C"`
+	TempF float64 `json:"temp_F"`
+	TempK float64 `json:"temp_K"`
+}
+
 func main() {
 	// Configure OpenTelemetry
 	tp, err := initTracer()
@@ -37,6 +44,7 @@ func main() {
 
 	r.Post("/cep", otelhttp.NewHandler(http.HandlerFunc(handleCEP), "handleCEP").ServeHTTP)
 
+	log.Println("Starting server on :8081")
 	http.ListenAndServe(":8081", r)
 }
 
@@ -75,9 +83,20 @@ func handleCEP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(resp.StatusCode)
-	if _, err := w.Write([]byte(resp.Status)); err != nil {
-		log.Printf("failed to write response: %v", err)
+	if resp.StatusCode == http.StatusOK {
+		var weatherResponse WeatherResponse
+		if err := json.NewDecoder(resp.Body).Decode(&weatherResponse); err != nil {
+			http.Error(w, "error decoding response from service B", http.StatusInternalServerError)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(weatherResponse); err != nil {
+			http.Error(w, "error encoding response", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		http.Error(w, http.StatusText(resp.StatusCode), resp.StatusCode)
 	}
 }
 
